@@ -2,6 +2,8 @@
 
 PYTHON=venv/bin/python
 DATA_FOLDER=data
+mkdir -p $DATA_FOLDER
+
 WIKTIONARY_DUMP=enwiktionary-latest-pages-articles
 
 WIKTIONARY_DUMP_XML=$WIKTIONARY_DUMP.xml
@@ -27,4 +29,3 @@ if [[ ! (-e $WIKTIONARY_DUMP_JSON_FILE) ]]; then
     $PYTHON wiktionaryExtractor.py $WIKTIONARY_DUMP_XML_FILE $WIKTIONARY_DUMP_JSON_FILE
 fi
 
-mongoimport --db wiktionary --collection $WIKTIONARY_DUMP --type json $WIKTIONARY_DUMP_JSON_FILE --json
