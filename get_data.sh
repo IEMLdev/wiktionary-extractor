@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
 PYTHON=venv/bin/python
+if ! test -x $PYTHON
+then
+  PYTHON=$(which python)
+fi
 DATA_FOLDER=data
 mkdir -p $DATA_FOLDER
 
