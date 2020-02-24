@@ -100,7 +100,7 @@ def cleanText(txt, keepMetaData=False):
 	cleanTxt = cleanTxt if cleanTxt[:2] != "  " else cleanTxt[2:]
 	cleanTxt = cleanTxt if cleanTxt[:1] != " " else cleanTxt[1:]
 	if re.match(r"\*  |\* ", cleanTxt) is not None:
-		cleanTxt = [s.replace("*  ", "").replace("* ", "") for s in re.split(r"\n\*[ ]{1,2}", cleanTxt)]
+		cleanTxt = [s.replace("*  ", "").replace("* ", "") for s in re.split(r"\n\*[:]?[ ]{1,2}", cleanTxt)]
 		cleanTxt = [s[0] if len(s) == 1 else s for s in cleanTxt]
 	return cleanTxt
 
@@ -192,13 +192,24 @@ def extractAndDump(inputPath, outputPath="./output.json"):
 							sectRelatedTerms.append(cleanText(subsectionContent))
 						# capture translations
 						elif subsectionTitle in ["Translations"]:
-							translationList = cleanText(subsectionContent).split(" * ")
-							if len(translationList) != 0:
-								transDict = {"definition": translationList[0]}
-								for langTrans in translationList[1:]:
-									langVal = re.split(r": |:", langTrans)
-									if len(langVal) == 2:
-										transDict[langVal[0]] = cleanText(langVal[1])
+							if type(subsectionContent) is list:
+								if len(subsectionContent) == 1:
+									subsectionContent = subsectionContent[0]
+							subsectionContentList = [s for s in re.split(r"\{\{trans-top\|?|\{\{checktrans-top\|?|\{\{trans-bottom\}\}|[\n]{2,6}", subsectionContent) if s not in [""]]
+							for subCont in subsectionContentList:
+								subCont = re.sub(r"{{trans-mid}}[\n]?", "", subCont)
+								translDef = [el for el in subCont.split("\n") if ("}}" in el and "{{" not in el)]
+								translDef = "" if len(translDef) == 0 else translDef[0].replace("}}", "")
+								# save to dict
+								transDict = {"definition": translDef}
+								translContents = re.split(r"\n(?=\*)", subCont)
+								translContents = translContents[1:]
+								for trContent in translContents:
+									trLang = re.match(r"\*[ :]{1,2}.+?:[ ]?", trContent)
+									if trLang not in [None, ""]:
+										trContent = trContent.replace(trLang.group(0), "")
+										trLang = re.sub(r"\*[ :]{1,2}|: ", "", trLang.group(0))
+										transDict[trLang] = cleanText(trContent, keepMetaData=True)
 								sectTranslations.append(transDict)
 				# get the POS, links, synonyms and other particular data
 				for synsetPos, synsetContent in sectMorphSyntx.items():
