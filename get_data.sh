@@ -30,6 +30,6 @@ if [[ ! (-e $WIKTIONARY_DUMP_XML_FILE) ]]; then
 fi
 if [[ ! (-e $WIKTIONARY_DUMP_JSON_FILE) ]]; then
     echo "Parsing Wiktionary dump..."
-    $PYTHON wiktionaryExtractor.py $WIKTIONARY_DUMP_XML_FILE $WIKTIONARY_DUMP_JSON_FILE
+    $PYTHON wiktionaryExtractor.py -in $WIKTIONARY_DUMP_XML_FILE -out $WIKTIONARY_DUMP_JSON_FILE
 fi
 
