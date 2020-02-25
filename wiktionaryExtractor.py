@@ -8,6 +8,9 @@ from nltk.tokenize import word_tokenize
 from tqdm import tqdm
 from xml.etree import ElementTree as ET
 
+import nltk
+nltk.download("punkt")
+
 def getDataLists():
 	langs = set(["Abaza", "Abkhaz", "Adyghe", "Afrikaans", "Akan", "Albanian", 
 		"American Sign Language", "Amharic", "Arabic", "Aragonese", "Armenian", 
