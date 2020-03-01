@@ -1,3 +1,12 @@
 nltk
 tqdm
 pymongo
+
+requests
+
+bidict
+pandas
+appdirs
+pygit2
+scipy
+ply
