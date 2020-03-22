@@ -19,22 +19,32 @@ class BertEmbedd:
         self.bert = BertEmbedding(model="bert_12_768_12")
 
     def fuse(self, word_emb):
-        new = np.empty(word_emb[0][1][0].shape)
+        new = np.empty(word_emb[1][0].shape)
         counter = 0.0
-        for tok, vect in zip(word_emb[0][0], word_emb[0][1]):
+        for tok, vect in zip(word_emb[0], word_emb[1]):
             if len(tok) != 0:
                 new += vect
                 counter += 1.0
         return new/counter
 
-    def find_nearest(self, a_array, array_of_arrays):
-        print(1111111, type(a_array))
-        print(22222222, type(array_of_arrays[0]))
+    def fuse_all(self, word_emb_list):
+        for ind, w_emb in enumerate(word_emb_list):
+            word_emb_list[ind] = self.fuse(w_emb)
+        return word_emb_list
+
+    def find_nearest(self, a_array, array_of_arrays, n=1):
+        n = len(array_of_arrays) if n > len(array_of_arrays) else n
         a_array = np.array([a_array])
+        a_array = np.nan_to_num(a_array)
+        print(777777777777, np.finfo(np.float64).max)
         # get 1 nearest neighbor using "ball tree" ('auto', 'ball_tree', 'kd_tree', 'brute')
-        potential_neighbors = NearestNeighbors(n_neighbors=1, algorithm='ball_tree').fit(array_of_arrays)
+        potential_neighbors = NearestNeighbors(n_neighbors=n, algorithm='ball_tree')
+        print(88888, np.isnan(array_of_arrays.any()))
+        print(99999, np.isfinite(array_of_arrays.all()))
+        potential_neighbors = potential_neighbors.fit(array_of_arrays)
+        # potential_neighbors = potential_neighbors.fit_transform(potential_neighbors)
         distances, indices = potential_neighbors.kneighbors(a_array)
-        return indices
+        return indices[0]
 
 class WiktionaryData:
     """
@@ -69,10 +79,11 @@ class WiktionaryData:
     def make_bert_emb_list(self, bert_class=None, dump=False):
         if bert_class is None:
             bert_class = BertEmbedd()
-        # overwrtite data from previous files
         sent_file_path = self.json_in_path.replace(".json", ".sent")
-        with open(sent_file_path, "w") as sent_file:
-            sent_file.write("")
+        # overwrtite data from previous files if dump is required
+        if dump is not False:
+            with open(sent_file_path, "w") as sent_file:
+                sent_file.write("")
         with open(sent_file_path, "a") as sent_file:
             # get the data
             ln = self.json_file.readline()
@@ -93,7 +104,8 @@ class WiktionaryData:
                         elif type(data_dict[section]) is str:
                             wikt_sent += " {0}".format(data_dict[section]).replace("\n", "")
                 # dump wiktionary "sent" (useful definition data)
-                sent_file.write("{0}\n".format(wikt_sent))
+                if dump is not False:
+                    sent_file.write("{0}\n".format(wikt_sent))
                 # next
                 ln = self.json_file.readline()
                 counter += 1 ###################
@@ -106,13 +118,12 @@ class WiktionaryData:
         if dump is not False:
             # dump the embeddings
             for (bert_vocab, bert_vect) in sent_emb:
+                bert_vect = np.array(bert_vect)
                 self.vocab_file.write("{0}\n".format(json.dumps(bert_vocab)))
                 try:
                     self.out_file.write("{0}\n".format(json.dumps(bert_vect)))
-                    print(11111, type(bert_vect), bert_vect[0])
                 except TypeError:
                     self.out_file.write("{0}\n".format(bert_vect.dumps()))
-                    print(22222, type(bert_vect), bert_vect[0])
             # numpy.save(self.out_file, sent_emb)
         self.close_all()
         return sent_emb
@@ -182,20 +193,18 @@ def choose_task(t_task=None, input_path=None, output_path=None):
     wiki_data = WiktionaryData(input_path, output_path)
     ieml_data = IemlData("./ieml-language-master/")
     if t_task.lower() in ["json2list", "list", "json", "makelist"]:
-        wiktionary_vector_data = wiki_data.make_bert_emb_list(bert_class)
+        wiktionary_vector_data = wiki_data.make_bert_emb_list(bert_class, dump=True)
         wiktionary_sents = [se[0][0] for se in wiktionary_vector_data if len(se[0][0]) != 0]
-        wiktionary_embeddings = bert_class.fuse(wiktionary_vector_data)
+        wiktionary_embeddings = np.array([bert_class.fuse(se) for se in wiktionary_vector_data])
         # for w in wiktionary_embeddings:
         #     print(w[0])
         #######################
         ieml_vector_data = ieml_data.make_bert_emb_list(lang="en", bert_class=bert_class)[0]
-        print(len(ieml_vector_data))
         ieml_sents = [se[0][0] for se in ieml_vector_data if len(se[0][0]) != 0]
-        ieml_embeddings = bert_class.fuse(ieml_vector_data)
-        print(22222222, len(ieml_embeddings))
+        ieml_embeddings = np.array([bert_class.fuse(se) for se in ieml_vector_data])
         for w in ieml_embeddings:
-            print(1111111, bert_class.find_nearest(w, wiktionary_embeddings))
-            # print(w[0][0])
+            close_neighb_ind = bert_class.find_nearest(w, wiktionary_embeddings)
+            print(close_neighb_ind)
         #######################
 
 
