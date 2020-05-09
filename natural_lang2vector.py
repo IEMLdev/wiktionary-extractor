@@ -78,9 +78,18 @@ class WiktionaryData:
         self.json_file = open(self.json_in_path)
 
     def close_all(self):
-        self.json_file.close()
-        self.out_file.close()
-        self.vocab_file.close()
+        try:
+            self.json_file.close()
+        except AttributeError:
+            pass
+        try:
+            self.out_file.close()
+        except AttributeError:
+            pass
+        try:
+            self.vocab_file.close()
+        except AttributeError:
+            pass
 
     def make_bert_emb_list(self, bert_class=None, dump=False):
         if bert_class is None:
@@ -153,35 +162,61 @@ class IemlData:
         if out_file_path is not None:
             with open(out_file_path, "w") as output_file:
                 output_file.write("")
+            self.vocab_file_path = "{0}.vocab".format(out_file_path.replace(".tsv", "").replace(".csv", ""))
+            self.vocab_file = open(self.vocab_file_path, "a")
             self.out_file_path = out_file_path
             self.out_file = open(out_file_path, "a")
 
     def close_all(self):
-        self.out_file.close()
+        try:
+            self.vocab_file.close()
+        except AttributeError:
+            pass
+        try:
+            self.out_file.close()
+        except AttributeError:
+            pass
 
     def get_word_objects(self):
         return self.database.list(parse=False, type='word')
 
     def list_polymorpheme_of_word(self, w):
+        ########WORkAROUND############TO BE SOLVED THEN REMOVE########################################3
+        if w == "[! E:B:. ()(k.a.-k.a.-' l.o.-k.o.-') > E:.f.- ()(p.E:A:T:.-)] [>role>E:B:.>content>constant>k.a.-k.a.-'":
+            return []
+        ##################################################################
         w = usl(w)
         assert isinstance(w, Word)
-        return list(chain.from_iterable((sfun.actor.pm_content, sfun.actor.pm_flexion)
-                                        for sfun in w.syntagmatic_fun.actors.values()))
+        polyList = []
+        for sfun in w.syntagmatic_fun.actors.values():
+            if sfun.actor is not None:
+                polyList.append((sfun.actor.pm_content, sfun.actor.pm_flexion))
+        # return list(chain.from_iterable((sfun.actor.pm_content, sfun.actor.pm_flexion)
+        #                                 for sfun in w.syntagmatic_fun.actors.values())) # encounteres AttributeError: 'NoneType' object has no attribute 'pm_content' since sfun.actor can be None
+        return polyList
 
     def get_natural_lang_meanings(self, lang="en"):
-        word_nl_meanings = []
+        nl_meanings = []
         descriptors = self.database.get_descriptors()
         for word in self.get_word_objects():
+            word_nl_meanings = []
+            # get meaning of word
+            desc_w_vals = descriptors.get_values_partial(word)
+            for (usl_w, language_w, label_w), tr_w_list in desc_w_vals.items():
+                if language_w == lang and label_w == "translations":
+                    word_nl_meanings.append([" , ".join(tr_w_list)])
+            # divide the words form the polymorphemes
+            word_nl_meanings.append([" : "])
+            # get meaning of polymorpheme
             polymorphemes = self.list_polymorpheme_of_word(word)
-            nl_meanings = []
-            for poly in polymorphemes:
-                try:
-                    nl_meanings.append(descriptors.get_values(poly, language=lang, descriptor='translations'))
-                except ValueError:
-                    pass
-            # yield nl_meanings
-            word_nl_meanings.append(nl_meanings)
-        return word_nl_meanings
+            for polymorph in polymorphemes:
+                for poly in polymorph:
+                    desc_p_vals = descriptors.get_values_partial(poly)
+                    for (usl_p, language_p, label_p), tr_p_list in desc_p_vals.items():
+                        if language_p == lang and label_p == "translations":
+                            word_nl_meanings.append(tr_p_list)
+            nl_meanings.append(word_nl_meanings)
+        return nl_meanings
             
     def get_bert_emb(self, string, bert_class):
         bert_class = bert_class if bert_class is not None else BertEmbedd()
@@ -191,9 +226,22 @@ class IemlData:
         bert_class = bert_class if bert_class is not None else BertEmbedd()
         bert_embeddings = []
         for ieml_pm_in_nl in self.get_natural_lang_meanings(lang):
-            ieml_pm_in_nl = " ".join([" ".join(pm) for pm in ieml_pm_in_nl if len(pm) != 0])
+            ieml_w_pm_sent = " ".join([" ".join(pm) for pm in ieml_pm_in_nl if len(pm) != 0])
             # yield self.get_bert_emb(ieml_pm_in_nl, bert_class)
-            bert_embeddings.append(self.get_bert_emb(ieml_pm_in_nl, bert_class))
+            bert_embeddings.append(self.get_bert_emb(ieml_w_pm_sent, bert_class))
+        # dump ieml the sentence embeddings
+        if dump is not False:
+            # dump the embeddings
+            for bert_emb in bert_embeddings:
+                for (bert_vocab, bert_vect) in bert_emb:
+                    bert_vect = np.array(bert_vect)
+                    self.vocab_file.write("{0}\n".format(json.dumps(bert_vocab)))
+                    try:
+                        self.out_file.write("{0}\n".format(json.dumps(bert_vect)))
+                    except TypeError:
+                        self.out_file.write("{0}\n".format(bert_vect.dumps()))
+            # numpy.save(self.out_file, sent_emb)
+        self.close_all()
         return bert_embeddings
 
 
@@ -221,10 +269,13 @@ def choose_task(t_task=None, input_path=None, output_path=None, input_ieml_path=
         ieml_vector_data = ieml_data.make_bert_emb_list(lang="en", bert_class=bert_class)
         ieml_sents = [se[0][0] for se in ieml_vector_data if len(se[0][0]) != 0]
         ieml_embeddings = np.array([bert_class.fuse(se[0]) for se in ieml_vector_data if len(se[0][0]) != 0])
-        for i, w in enumerate(ieml_embeddings):
-            close_neighb_ind = bert_class.find_nearest(w, wiktionary_embeddings, n=1)
-            print(111111, i, ieml_sents[i])
-            print(2222222, close_neighb_ind[0], wiktionary_sents[close_neighb_ind[0]])
+        with open("/home/d/Documents/programming/iemlProject/out_test.tsv", "w") as t_o:
+            for i, w in enumerate(ieml_embeddings):
+                close_neighb_ind = bert_class.find_nearest(w, wiktionary_embeddings, n=1)
+                # print(111111, i, ieml_sents[i])
+                # print(2222222, close_neighb_ind[0], wiktionary_sents[close_neighb_ind[0]])
+                t_o.write("{0}\t{1}\t{2}\t{3}\n".format(" ".join(ieml_sents[i]).split(":")[0], wiktionary_sents[close_neighb_ind[0]][0], ieml_sents[i], wiktionary_sents[close_neighb_ind[0]]))
+
         ############################################
     # COMMAND:
     # python3 natural_lang2vector.py -t dumpwiktio -in ./wiktionary-dumps/wiktionary_English.json -out embeddings/wiktionary_English_embedd.tsv
@@ -232,15 +283,15 @@ def choose_task(t_task=None, input_path=None, output_path=None, input_ieml_path=
         wiki_data = WiktionaryData(input_path, output_path, input_ieml_path)
         wiktionary_vector_data = wiki_data.make_bert_emb_list(bert_class, dump=True)
     # COMMAND:
-    # python3 natural_lang2vector.py -t dumpwiktio -in ./ieml-language-master/ -out embeddings/ieml_English_embedd.tsv
+    # python3 natural_lang2vector.py -t dumpieml -indb ./ieml-language-master/ -out embeddings/ieml_English_embedd.tsv
     elif t_task.lower() in ["ieml2list", "dumpieml", "ieml", "dumpi"]:
-        ieml_data = IemlData(input_path, output_path, input_ieml_path)
+        ieml_data = IemlData(input_ieml_path, output_path)
         ieml_vector_data = ieml_data.make_bert_emb_list(lang="en", bert_class=bert_class, dump=True)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("-t", "--task", type=str, default="None", help="path to the wiktionary json")
+    parser.add_argument("-t", "--task", type=str, default="None", help="task to execute (findnearest, dumpwiktio, dumpieml)")
     parser.add_argument("-in", "--input", type=str, default="None", help="path to the wiktionary json")
     parser.add_argument("-indb", "--inputDatabase", type=str, default="None", help="path to the ieml database folder")
     parser.add_argument("-out", "--output", type=str, help="path to the output file")
@@ -248,10 +299,10 @@ if __name__ == '__main__':
 
     a_task = args.task
     input_path = args.input
-    input_path = None if input_path in ["None", "none"]
+    input_path = None if input_path in ["None", "none"] else input_path
     input_ieml_path = args.inputDatabase
-    input_ieml_path = None if input_path in ["None", "none"]
+    input_ieml_path = None if input_path in ["None", "none"] else input_ieml_path
     output_path = args.output
-    output_path = None if input_path in ["None", "none"]
+    output_path = None if input_path in ["None", "none"] else output_path
 
     choose_task(a_task, input_path, output_path, input_ieml_path)
